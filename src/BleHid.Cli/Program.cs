@@ -57,7 +57,7 @@ Console.WriteLine($"""
 
     Advertisement status: {peripheral.AdvertisementStatus}
     Pair from your phone's Bluetooth settings, then use the commands below.
-    Capture starts by itself when a host connects; a secondary click stops it.
+    Capture starts by itself when a host connects; a secondary click stops it and closes BleHid.
 
       type <text>          send keystrokes
       key <name>           press a named key (enter, esc, up, f5, ...)
@@ -115,7 +115,13 @@ while (true)
         Console.WriteLine();
         try
         {
-            await AutoCaptureAsync(peripheral, Log);
+            // Without a keyboard nothing is left to do at the prompt, and opening BleHid again is how
+            // to get back to the host, so a capture that started by itself closes the window as it ends.
+            if (await AutoCaptureAsync(peripheral, Log))
+            {
+                Log("  capture ended - closing");
+                break;
+            }
         }
         catch (Exception ex)
         {
@@ -396,9 +402,9 @@ static bool HostConnected(BleHidPeripheral peripheral) =>
     peripheral.SubscribedKeyboardClients > 0 && peripheral.SubscribedMouseClients > 0;
 
 // Runs what a typed `capture` runs, with two differences: the target goes back to all hosts if an
-// earlier disconnect left it on this PC, and the session ends when its host goes away, so the next
-// connection starts a fresh one instead of leaving capture idling on this PC.
-static async Task AutoCaptureAsync(BleHidPeripheral peripheral, Action<string> log)
+// earlier disconnect left it on this PC, and the session also ends when its host goes away instead
+// of idling on this PC. Returns false when the host left during the pause and nothing was captured.
+static async Task<bool> AutoCaptureAsync(BleHidPeripheral peripheral, Action<string> log)
 {
     // A typed `capture` comes a few seconds after the host connects; keep a pause like that so the
     // host has finished setting up, and the mouse is not taken without warning.
@@ -421,11 +427,12 @@ static async Task AutoCaptureAsync(BleHidPeripheral peripheral, Action<string> l
         if (!HostConnected(peripheral))
         {
             log("  host disconnected again - not capturing");
-            return;
+            return false;
         }
 
         await CaptureSession.RunAsync(peripheral, log, verbose: false, mouseIntervalMs: () => 10,
             stopEndsSession: true, hostLost.Token);
+        return true;
     }
     finally
     {
