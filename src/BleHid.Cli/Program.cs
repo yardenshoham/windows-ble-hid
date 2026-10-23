@@ -13,7 +13,19 @@ if (Flag("--install-autostart")) return BackgroundMode.InstallAutoStart(true);
 if (Flag("--remove-autostart")) return BackgroundMode.InstallAutoStart(false);
 
 var peripheral = new BleHidPeripheral(requireEncryption);
-peripheral.Log += message => Console.WriteLine(message);
+
+// A mouse-only user cannot copy text out of this window, so what the peripheral and capture
+// report also goes to a file that can be read after something goes wrong.
+var consoleLog = OpenConsoleLog();
+consoleLog?.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss} --- console start (pid {Environment.ProcessId}) ---");
+void Log(string message)
+{
+    Console.WriteLine(message);
+    if (consoleLog is null) return;
+    lock (consoleLog) consoleLog.WriteLine($"{DateTime.Now:HH:mm:ss} {message}");
+}
+
+peripheral.Log += Log;
 
 // Hook callbacks must not block, so reports are queued and sent sequentially.
 var sendQueue = Channel.CreateUnbounded<Func<Task>>(new UnboundedChannelOptions { SingleReader = true });
@@ -45,6 +57,7 @@ Console.WriteLine($"""
 
     Advertisement status: {peripheral.AdvertisementStatus}
     Pair from your phone's Bluetooth settings, then use the commands below.
+    Capture starts by itself when a host connects; a secondary click stops it.
 
       type <text>          send keystrokes
       key <name>           press a named key (enter, esc, up, f5, ...)
@@ -78,10 +91,41 @@ Console.WriteLine($"""
 
     """);
 
+// Without a keyboard, typing `capture` is the hard part, so capture also starts by itself when a
+// host connects. ReadLine blocks, so it runs on its own task while the prompt watches for hosts.
+Task<string?>? pendingLine = null;
+var hostWasConnected = false;
+
 while (true)
 {
     Console.Write("> ");
-    var line = Console.ReadLine();
+    pendingLine ??= Task.Run(Console.ReadLine);
+
+    var hostArrived = false;
+    while (!pendingLine.IsCompleted && !hostArrived)
+    {
+        var connected = HostConnected(peripheral);
+        hostArrived = connected && !hostWasConnected;
+        hostWasConnected = connected;
+        if (!hostArrived) await Task.WhenAny(pendingLine, Task.Delay(250));
+    }
+
+    if (hostArrived)
+    {
+        Console.WriteLine();
+        try
+        {
+            await AutoCaptureAsync(peripheral, Log);
+        }
+        catch (Exception ex)
+        {
+            Log($"  error: {ex.Message}");
+        }
+        continue;
+    }
+
+    var line = await pendingLine;
+    pendingLine = null;
     if (line is null) break;
 
     var parts = line.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
@@ -119,7 +163,7 @@ while (true)
                                                  .FirstOrDefault(v => v > 0);
                 if (mouseIntervalMs <= 0) mouseIntervalMs = 10;
 
-                await CaptureSession.RunAsync(peripheral, Console.WriteLine, verbose, () => mouseIntervalMs,
+                await CaptureSession.RunAsync(peripheral, Log, verbose, () => mouseIntervalMs,
                     stopEndsSession: true, CancellationToken.None);
                 break;
             }
@@ -346,6 +390,63 @@ while (true)
 await peripheral.DisposeAsync();
 appearance.Dispose();
 return 0;
+
+// Mouse control needs the mouse report as well; a typed `capture` only insists on the keyboard one.
+static bool HostConnected(BleHidPeripheral peripheral) =>
+    peripheral.SubscribedKeyboardClients > 0 && peripheral.SubscribedMouseClients > 0;
+
+// Runs what a typed `capture` runs, with two differences: the target goes back to all hosts if an
+// earlier disconnect left it on this PC, and the session ends when its host goes away, so the next
+// connection starts a fresh one instead of leaving capture idling on this PC.
+static async Task AutoCaptureAsync(BleHidPeripheral peripheral, Action<string> log)
+{
+    // A typed `capture` comes a few seconds after the host connects; keep a pause like that so the
+    // host has finished setting up, and the mouse is not taken without warning.
+    log("  host connected - capture starts in 2 s");
+    await Task.Delay(TimeSpan.FromSeconds(2));
+
+    if (peripheral.IsLocalTarget) peripheral.SelectAllHosts();
+
+    // Not disposed: a TargetChanged already on its way may still cancel it after the session.
+    var hostLost = new CancellationTokenSource();
+    void OnTargetChanged()
+    {
+        if (peripheral.IsLocalTarget) hostLost.Cancel();
+    }
+
+    peripheral.TargetChanged += OnTargetChanged;
+    try
+    {
+        // Checked after subscribing, so a host that leaves from here on is caught by the handler.
+        if (!HostConnected(peripheral))
+        {
+            log("  host disconnected again - not capturing");
+            return;
+        }
+
+        await CaptureSession.RunAsync(peripheral, log, verbose: false, mouseIntervalMs: () => 10,
+            stopEndsSession: true, hostLost.Token);
+    }
+    finally
+    {
+        peripheral.TargetChanged -= OnTargetChanged;
+    }
+}
+
+static StreamWriter? OpenConsoleLog()
+{
+    try
+    {
+        var path = AppPaths.InLogs("console.log");
+        if (File.Exists(path) && new FileInfo(path).Length > 5 * 1024 * 1024) File.Delete(path);
+        return new StreamWriter(path, append: true) { AutoFlush = true };
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+        // A second window has it open; the console works the same without it.
+        return null;
+    }
+}
 
 static async Task TypeTextAsync(BleHidPeripheral peripheral, string text)
 {

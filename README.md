@@ -91,7 +91,8 @@ app's notification-area menu; closing its window may only hide it.
   starts advertising immediately.
 2. Pair with the PC from the target device's Bluetooth settings, using the input-device
   entry rather than the audio one on Windows as described above.
-3. Type **`capture`** and press Enter.
+3. Capture starts by itself two seconds after the device connects. You can also type
+  **`capture`** and press Enter.
 
 ### Capture shortcuts
 

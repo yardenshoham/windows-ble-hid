@@ -277,7 +277,8 @@ public static class CaptureSession
         pumpCancellation.Cancel();
         try { await pump; } catch (OperationCanceledException) { }
         await peripheral.ReleaseKeysAsync();
-        log($"  capture stopped. keyboard events={capture.KeyboardEvents}, mouse events={capture.MouseEvents}, reports sent={sent}");
+        log($"  capture stopped. keyboard events={capture.KeyboardEvents}, mouse events={capture.MouseEvents}, "
+            + $"button events={capture.ButtonEvents} (injected, let through: {capture.InjectedButtonEvents}), reports sent={sent}");
         return sent;
     }
 }

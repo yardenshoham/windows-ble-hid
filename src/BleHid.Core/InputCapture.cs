@@ -40,6 +40,7 @@ public sealed class InputCapture : IDisposable
     private MouseButtons _localButtons;
     private int _centerX, _centerY;
     private int _keyboardEvents, _mouseEvents, _rearms;
+    private int _buttonEvents, _injectedButtonEvents;
     private bool _switchLatched;
     private bool _capsLockSwitchLatched;
     private bool _stopClickArmed;
@@ -95,6 +96,8 @@ public sealed class InputCapture : IDisposable
 
     public int KeyboardEvents => _keyboardEvents;
     public int MouseEvents => _mouseEvents;
+    public int ButtonEvents => _buttonEvents;
+    public int InjectedButtonEvents => _injectedButtonEvents;
     public int Rearms => _rearms;
 
     public void Start()
@@ -435,12 +438,21 @@ public sealed class InputCapture : IDisposable
         if (code != HC_ACTION) return CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
 
         var data = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+        var message = (int)wParam;
+
+        // Clicks are counted while capturing so a session summary shows whether they reached this
+        // hook at all, and whether another program replayed them as injected input, which bypasses it.
+        if (message is >= WM_LBUTTONDOWN and <= WM_MBUTTONUP && !_passThrough)
+        {
+            if ((data.flags & LLMHF_INJECTED) != 0) _injectedButtonEvents++;
+            else _buttonEvents++;
+        }
+
         if ((data.flags & LLMHF_INJECTED) != 0)
             return CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
 
         // Low-level hooks see buttons after the Windows "switch primary and secondary" setting is
         // applied, so WM_RBUTTON* is the secondary button on a left-handed setup too.
-        var message = (int)wParam;
         if (message is WM_RBUTTONDOWN or WM_RBUTTONUP)
             return HandleSecondaryButton(message == WM_RBUTTONDOWN)
                 ? (IntPtr)1
