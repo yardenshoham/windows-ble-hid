@@ -20,7 +20,7 @@
 
       <ui:InfoBar Severity="Warning" IsClosable="False" Margin="0,0,0,16"
                   Title="Capture takes over this PC"
-                  Message="While input is going to a host, this window stops receiving it. Press Ctrl+Alt+Q to stop capture, or Ctrl+Alt+CapsLock to switch to the next target."
+                  Message="While input is going to a host, this window stops receiving it. Press Ctrl+Alt+Q or click the secondary mouse button to stop capture, or Ctrl+Alt+CapsLock to switch to the next target."
                   IsOpen="{Binding IsRedirecting}" />
 
       <ui:InfoBar x:Name="NoHostsBar" Severity="Informational" IsClosable="False" Margin="0,0,0,16"

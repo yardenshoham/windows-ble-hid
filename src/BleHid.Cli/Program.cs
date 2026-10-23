@@ -51,7 +51,7 @@ Console.WriteLine($"""
       move <dx> <dy>       move the pointer
       click <l|r|m>        click a mouse button
       scroll <n>           scroll wheel
-      capture              redirect local keyboard+mouse (Ctrl+Alt+Q stops)
+      capture              redirect local keyboard+mouse (Ctrl+Alt+Q or secondary click stops)
       capture verbose      same, with per-report timing diagnostics
       capture <ms>         same, with a custom pointer report interval
       host                 list subscribed hosts and the current target

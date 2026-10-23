@@ -5,7 +5,7 @@ namespace BleHid.Core;
 
 /// <summary>
 /// Captures local keyboard and mouse input via low-level hooks and translates it to HID reports.
-/// Input is swallowed while capturing; Ctrl+Alt+Q releases it.
+/// Input is swallowed while capturing; Ctrl+Alt+Q or a secondary-button click releases it.
 /// </summary>
 public sealed class InputCapture : IDisposable
 {
@@ -42,6 +42,7 @@ public sealed class InputCapture : IDisposable
     private int _keyboardEvents, _mouseEvents, _rearms;
     private bool _switchLatched;
     private bool _capsLockSwitchLatched;
+    private bool _stopClickArmed;
     private volatile bool _passThrough;
     private volatile bool _running;
     // Swapped from the settings-watcher thread while the hook thread reads it, so the field has
@@ -312,10 +313,7 @@ public sealed class InputCapture : IDisposable
 
         if (isDown && virtualKey == 0x51 && IsDown(0x11) && IsDown(0x12)) // Ctrl+Alt+Q
         {
-            _pressedUsages.Clear();
-            _pressedVirtualKeys.Clear();
-            KeyboardReport?.Invoke(KeyModifiers.None, []);
-            StopRequested?.Invoke();
+            RequestStop();
             return true;
         }
 
@@ -366,6 +364,14 @@ public sealed class InputCapture : IDisposable
             MouseReport?.Invoke(_buttons, 0, 0, 0);
         }
         SwitchHostRequested?.Invoke();
+    }
+
+    private void RequestStop()
+    {
+        _pressedUsages.Clear();
+        _pressedVirtualKeys.Clear();
+        KeyboardReport?.Invoke(KeyModifiers.None, []);
+        StopRequested?.Invoke();
     }
 
     /// <summary>
@@ -432,17 +438,23 @@ public sealed class InputCapture : IDisposable
         if ((data.flags & LLMHF_INJECTED) != 0)
             return CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
 
+        // Low-level hooks see buttons after the Windows "switch primary and secondary" setting is
+        // applied, so WM_RBUTTON* is the secondary button on a left-handed setup too.
         var message = (int)wParam;
+        if (message is WM_RBUTTONDOWN or WM_RBUTTONUP)
+            return HandleSecondaryButton(message == WM_RBUTTONDOWN)
+                ? (IntPtr)1
+                : CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
+
         var button = message switch
         {
             WM_LBUTTONDOWN or WM_LBUTTONUP => MouseButtons.Left,
-            WM_RBUTTONDOWN or WM_RBUTTONUP => MouseButtons.Right,
             WM_MBUTTONDOWN or WM_MBUTTONUP => MouseButtons.Middle,
             _ => MouseButtons.None
         };
         if (button != MouseButtons.None)
         {
-            var isDown = message is WM_LBUTTONDOWN or WM_RBUTTONDOWN or WM_MBUTTONDOWN;
+            var isDown = message is WM_LBUTTONDOWN or WM_MBUTTONDOWN;
             return HandleMouseButtonEvent(button, isDown)
                 ? (IntPtr)1
                 : CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
@@ -458,7 +470,7 @@ public sealed class InputCapture : IDisposable
 
         _mouseEvents++;
 
-        switch ((int)wParam)
+        switch (message)
         {
             case WM_MOUSEMOVE:
                 var dx = data.pt.x - _centerX;
@@ -479,6 +491,28 @@ public sealed class InputCapture : IDisposable
         }
 
         return 1; // swallow locally
+    }
+
+    /// <summary>
+    /// The secondary button is never sent to a host: clicking it does what Ctrl+Alt+Q does, so input
+    /// can be taken back with only a mouse. It acts on the release, while the hook is still installed
+    /// to swallow it; a stray button-up reaching this PC would open a context menu here.
+    /// </summary>
+    /// <returns>True when the event must be swallowed.</returns>
+    internal bool HandleSecondaryButton(bool isDown)
+    {
+        if (isDown)
+        {
+            _stopClickArmed = !_passThrough;
+            return _stopClickArmed;
+        }
+
+        // A press that reached this PC keeps its release here, even if capture resumed meanwhile.
+        if (!_stopClickArmed) return false;
+
+        _stopClickArmed = false;
+        RequestStop();
+        return true;
     }
 
     private bool IsDown(int virtualKey) => virtualKey switch

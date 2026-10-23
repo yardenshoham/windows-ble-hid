@@ -100,7 +100,7 @@ The same shortcuts work in the desktop app and interactive CLI:
 
 | While capturing | |
 | --- | --- |
-| `Ctrl` + `Alt` + `Q` | Stop and return control to this PC |
+| `Ctrl` + `Alt` + `Q` or a secondary-button click | Stop and return control to this PC |
 | `Ctrl` + `Alt` + `CapsLock` or `Ctrl` + `D` + `C` | Switch which device you are driving, including back to this PC |
 
 The CLI also offers scripted input (`type`, `move`) and diagnostics.
@@ -196,7 +196,7 @@ pick a host. From there it is hotkeys only — there is no console to type into:
 | Hotkey | Action |
 | --- | --- |
 | `Ctrl` + `Alt` + `CapsLock` or `Ctrl` + `D` + `C` | Switch target: this PC → host 1 → … → host N → this PC |
-| `Ctrl` + `Alt` + `Q` | Return input to this PC (does **not** exit — use `--stop`) |
+| `Ctrl` + `Alt` + `Q` or a secondary-button click | Return input to this PC (does **not** exit — use `--stop`) |
 
 If the selected host disconnects, capture automatically returns input to this PC instead
 of continuing to swallow it. Reconnecting the host does not retarget it automatically;
@@ -282,10 +282,14 @@ notification-area menu, or type `quit` in the CLI, before rebuilding to avoid `M
 | Hotkey | Action |
 | --- | --- |
 | `Ctrl` + `Alt` + `CapsLock` or `Ctrl` + `D` + `C` | Switch target: this PC → host 1 → … → host N → this PC |
-| `Ctrl` + `Alt` + `Q` | Stop capturing |
+| `Ctrl` + `Alt` + `Q` or a secondary-button click | Stop capturing |
 
 When the target is **this PC**, input passes through untouched so you can use your own
 machine normally. The hotkeys stay live in that mode.
+
+The secondary mouse button is reserved for stopping, so it is never sent to a host. It is
+whichever button Windows treats as secondary — the left one if you have swapped the buttons
+for left-handed use. On this PC it keeps working as a normal secondary click.
 
 `Ctrl` + `Alt` + `CapsLock` cycles once per Caps Lock press without toggling Caps Lock
 locally or on the host. Ordinary Caps Lock presses are unchanged.

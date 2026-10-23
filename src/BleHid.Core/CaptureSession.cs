@@ -262,8 +262,8 @@ public static class CaptureSession
             log($"  sending to: {peripheral.SelectedHostDisplay}");
             log("  Ctrl+Alt+CapsLock or Ctrl+D+C switches target.");
             log(stopEndsSession
-                ? "  capturing - Ctrl+Alt+Q stops."
-                : "  capturing - Ctrl+Alt+Q returns input to this PC.");
+                ? "  capturing - Ctrl+Alt+Q or a secondary-button click stops."
+                : "  capturing - Ctrl+Alt+Q or a secondary-button click returns input to this PC.");
 
             capture.Start();
             await stopped.Task;

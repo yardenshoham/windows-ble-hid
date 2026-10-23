@@ -507,4 +507,59 @@ public sealed class InputCaptureTests
         Assert.Equal(CaptureSession.Queued.SwitchHost, change.Kind);
         Assert.False(queue.TryTakeMouseReport(out _));
     }
+
+    [Fact]
+    public void Secondary_click_releases_keys_then_stops_on_release_without_a_mouse_report()
+    {
+        using var capture = new InputCapture();
+        var events = new List<string>();
+        capture.KeyboardReport += (modifiers, usages) =>
+        {
+            Assert.Equal(KeyModifiers.None, modifiers);
+            Assert.Empty(usages);
+            events.Add("release");
+        };
+        capture.MouseReport += (_, _, _, _) => events.Add("mouse");
+        capture.SwitchHostRequested += () => events.Add("switch");
+        capture.StopRequested += () => events.Add("stop");
+
+        Assert.True(capture.HandleSecondaryButton(isDown: true));
+        Assert.Empty(events);
+        Assert.True(capture.HandleSecondaryButton(isDown: false));
+
+        Assert.Equal(new[] { "release", "stop" }, events);
+    }
+
+    [Fact]
+    public void Secondary_click_in_pass_through_stays_a_normal_click_on_this_pc()
+    {
+        using var capture = new InputCapture();
+        capture.SetPassThrough(true);
+        var stops = 0;
+        capture.StopRequested += () => stops++;
+
+        Assert.False(capture.HandleSecondaryButton(isDown: true));
+        Assert.False(capture.HandleSecondaryButton(isDown: false));
+
+        Assert.Equal(0, stops);
+    }
+
+    [Fact]
+    public void Secondary_release_goes_where_its_press_went_when_the_target_changes_in_between()
+    {
+        using var capture = new InputCapture();
+        var stops = 0;
+        capture.StopRequested += () => stops++;
+
+        capture.SetPassThrough(true);
+        Assert.False(capture.HandleSecondaryButton(isDown: true));
+        capture.SetPassThrough(false);
+        Assert.False(capture.HandleSecondaryButton(isDown: false));
+        Assert.Equal(0, stops);
+
+        Assert.True(capture.HandleSecondaryButton(isDown: true));
+        capture.SetPassThrough(true);
+        Assert.True(capture.HandleSecondaryButton(isDown: false));
+        Assert.Equal(1, stops);
+    }
 }
